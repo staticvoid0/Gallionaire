@@ -6,6 +6,10 @@ luac.out
 *.zip
 *.tar.gz
 
+settings.xml
+absorb_settings.xml
+settings_*.xml
+
 # Object files
 *.o
 *.os
