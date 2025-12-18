@@ -1,5 +1,7 @@
 👑 ⚔️ Gallionaire v2.5 ⚔ 👑
 
+https://github.com/staticvoid0/Gallionaire/releases/download/2.5/Gallionaire.zip
+
 💡 Overview
 
 Tracks and displays key Sortie data and progression items.
