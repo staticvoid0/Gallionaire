@@ -70,6 +70,7 @@ local player_name = windower.ffxi.get_info().logged_in and windower.ffxi.get_pla
 local addon_path = windower.addon_path
 local screen_w = windower.get_windower_settings().ui_x_res
 local screen_h = windower.get_windower_settings().ui_y_res
+local interaction_delay = 0
 local player_total = 0
 local galli_message_id = 39998
 local last_update_time = 0
@@ -108,6 +109,9 @@ flags.entered_sortie_now = false
 flags.zoning = false
 flags.in_sortie_zone = false
 flags.polling_zone = false
+flags.in_leafalia = false
+flags.in_silverknife = false
+flags.upgraded_weapon = false
 
 -- Display settings
 local settings = config.load('data/settings_' .. player_name .. '.xml', {
@@ -627,6 +631,11 @@ windower.register_event('incoming chunk', function(id, data)
                 update_display()
             end
         end
+    elseif flags.in_silverknife then
+        if id == 0x034 then
+            flags.upgraded_weapon = true
+            --induct_data()
+        end
     end
 ---------------------------------------------------------------------------
 end)
@@ -928,12 +937,12 @@ local function one_hour_checker()
 				coroutine.sleep(1)
 				log("Ask for cutting cards...")
 				if toggle_sound then windower.play_sound(sound_paths.notify) end
-			elseif oh_notifier.five and abil_recasts > 21 then
+			elseif oh_notifier.five and abil_recasts > 23 then
 				log("Ask for cutting cards...")
 				coroutine.sleep(1)
 				log("Ask for cutting cards...")
 				if toggle_sound then windower.play_sound(sound_paths.notify) end
-			elseif oh_notifier.six and abil_recasts > 15 then
+			elseif oh_notifier.six and abil_recasts > 17 then
 				log("Ask for cutting cards...")
 				coroutine.sleep(1)
 				log("Ask for cutting cards...")
@@ -1134,29 +1143,28 @@ local function update_shinyplate_display()
 end
 
 function update_display()
-	local zone_tag = windower.ffxi.get_info().zone
 	local time_str = update_shinyplate_display()
 	local ruspix_time_str, can_recharge = update_ruspix_display()
 	-------------------Cutting cards / SV/CC notifier------------------------------
 	    if flags.in_sortie_zone and not flags.zoning then
 			if last_zone_time then
 			local time_since_entry = (os.time() - last_zone_time) / 60
-				if time_since_entry > 30 and not oh_notifier.six and not flags.zoning then
+				if time_since_entry > 30 and not oh_notifier.six then
 					oh_notifier.six = true
 					one_hour_checker()
-				elseif time_since_entry > 24 and not oh_notifier.five and not flags.zoning then
+				elseif time_since_entry > 24 and not oh_notifier.five then
 					oh_notifier.five = true
 					one_hour_checker()
-				elseif time_since_entry > 18 and not oh_notifier.four and not flags.zoning then
+				elseif time_since_entry > 18 and not oh_notifier.four then
 					oh_notifier.four = true
 					one_hour_checker()
-				elseif time_since_entry > 16 and not oh_notifier.three and not flags.zoning then
+				elseif time_since_entry > 16 and not oh_notifier.three then
 					oh_notifier.three = true
 					one_hour_checker()
-				elseif time_since_entry > 14 and not oh_notifier.two and not flags.zoning then
+				elseif time_since_entry > 14 and not oh_notifier.two then
 					oh_notifier.two = true
 					one_hour_checker()
-				elseif time_since_entry > 12 and not oh_notifier.one and not flags.zoning then
+				elseif time_since_entry > 12 and not oh_notifier.one then
 					oh_notifier.one = true
 					one_hour_checker()
 				end
@@ -1178,7 +1186,7 @@ function update_display()
         flags.entered_sortie = flags.entered_sortie_now
 		
 	     local grabbed_ruspix_plate_now = has_ruspix_plate()
-	if zone_tag == 281 then
+	if flags.in_leafalia then
         if not plates.ruspix.grabbed_ruspix_plate and grabbed_ruspix_plate_now then
             -- You are in Leafallia and you didn't have shinyplate, and now you do - update Ruspix plate accumulated time.
             plates.ruspix.accumulated_time = plates.ruspix.accumulated_time - remaining_time
@@ -1192,6 +1200,13 @@ function update_display()
 			coroutine.sleep(2)
 			windower.send_command('ga reset')
         end
+        upgrade_gear_checker = count_rakaznar_gems()
+        -- Upgrade Gallimaufry since we have upgraded a piece of gear
+	    if upgrade_gear_checker ~= new_upgrade_gear_checker then
+	        induct_data()
+			coroutine.schedule(update_display, 2)
+			new_upgrade_gear_checker = upgrade_gear_checker
+	    end
 	end
 			plates.ruspix.grabbed_ruspix_plate = grabbed_ruspix_plate_now
 	---------------------------------------------------------------
@@ -1205,18 +1220,17 @@ function update_display()
     earned_gallimaufry = 0                                                           --8
     end	                                                                             --8             
 	--8888888888888888888888888888888888888888888888888888888888888888888888888888888888
-	upgrade_gear_checker = count_rakaznar_gems()
-	
-	if zone_tag == 281 then
-                       -- Upgrade Gallimaufry since we have upgraded a piece of gear
-	    if upgrade_gear_checker ~= new_upgrade_gear_checker then
-	        induct_data()
-			coroutine.schedule(update_display, 2)
-			new_upgrade_gear_checker = upgrade_gear_checker
-	    end
-            
-	end
-	
+    if flags.in_silverknife then
+        if flags.upgraded_weapon then 
+            interaction_delay = interaction_delay + 1
+            if interaction_delay > 4 then
+                interaction_delay = 0
+                flags.upgraded_weapon = false
+                induct_data()
+            end
+        end
+    end
+
 	local dot_color = can_recharge and "\\cs(187,255,0)√\\cr" or "\\cs(140,140,140) \\cr"
 	local frag_1 = has_item(9914) and "\\cs(187,255,0)√ \\cr" or "\\cs(140,140,140) \\cr"
 	local frag_2 = has_item(9915) and "\\cs(187,255,0)√ \\cr" or "\\cs(140,140,140) \\cr"
@@ -1333,7 +1347,7 @@ windower.register_event('action', function(act)
 				entry.count = entry.count + 1
 				entry.last  = absorbed
 				entry.total = entry.total + absorbed
-				if absorbed > 350 then
+				if absorbed > 380 then
 					windower.play_sound(sound_paths.warning)
 				end
 				aminon_display:show()
@@ -1474,19 +1488,31 @@ local function check_zone()
         flags.in_sortie_zone = true
 		flags.polling_zone = true
 		flags.entered_sortie_now = true
+        flags.in_leafalia = false
+        flags.in_silverknife = false
         coroutine.schedule(function()
             induct_data()
 			absorb_counts = {}
 			zone_in_amount = previous_gallimaufry
             update_display()
         end, 2)
-	elseif zone_id == 267 or zone_id == 281 then
-		flags.polling_zone = true
+	elseif zone_id == 267 or zone_id == 281 or zone_id == 283 then
+        flags.polling_zone = true
+            if zone_id == 283 then
+                flags.in_silverknife = true
+            else
+                flags.in_silverknife = false
+            end
+            if zone_id == 281 then
+                flags.in_leafalia = true
+            else
+                flags.in_leafalia = false
+            end
     else
+        flags.in_silverknife = false
+        flags.in_leafalia = false
         flags.in_sortie_zone = false
 		flags.entered_sortie_now = false
-        coroutine.schedule(function()
-        end, 1)
     end
 end
 
@@ -1526,14 +1552,28 @@ windower.register_event('zone change', function(new_id, old_id)
 			flags.polling_zone = true
 			flags.in_sortie_zone = true
 			flags.entered_sortie_now = true
+            flags.in_leafalia = false
+            flags.in_silverknife = false
 			windower.send_command('ga reset')
 			absorb_counts = {}
 			induct_data()
 			zone_in_amount = previous_gallimaufry
 			update_display()
-		elseif new_id == 267 or new_id == 281 then
+		elseif new_id == 267 or new_id == 281 or new_id == 283 then
 			flags.polling_zone = true
+            if new_id == 283 then
+                flags.in_silverknife = true
+            else
+                flags.in_silverknife = false
+            end
+            if new_id == 281 then
+                flags.in_leafalia = true
+            else
+                flags.in_leafalia = false
+            end
 		else
+            flags.in_leafalia = false
+            flags.in_silverknife = false
 			flags.polling_zone = false
 		end
 		if old_id == 275 or old_id == 133 or old_id == 189 then
