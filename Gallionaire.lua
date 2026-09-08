@@ -1931,7 +1931,7 @@ windower.register_event('unload', function()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.2! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.3! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)
