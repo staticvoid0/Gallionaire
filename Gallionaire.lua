@@ -31,7 +31,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     with messages and sound effects at gallimaufry thresholds; Tracks and displays Ruspix plate and shiny plate timers. Shows the status of
 	temp-items within sortie such as shards, metals, fragments and the seal. Opens doors by targetting them (No need to drop invisible) with 
 	an option to toggle auto-open when approaching the doors. Tracks NPCs within Sortie and displays their location. Displays an Absorb-TP readout 
-	when fighting Aminon. Shows "Gallionaire" in blue ordinarily, but displays it in green while in a sortie zone or sortie staging zone and all 
+	when fighting Aminon detailing Absorb-TP spells cast along with Aminon's estimated TP which is attached to a learning algorith that auto-adjusts TP feed from 3 sources - 
+    Physical, Magical and Tank taking damage. Shows "Gallionaire" in blue ordinarily, but displays it in green while in a sortie zone or sortie staging zone and all 
 	6 party members are within 15 yalms, providing an indicator for when it is safe to pull bosses without having to count 6 players.
     More to come!
 ]] 
@@ -39,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 _addon.name = 'Gallionaire'
 _addon.author = 'Staticvoid'
-_addon.version = '2.5'
+_addon.version = '2.6.3'
 _addon.commands = {'Gallionaire', 'ga'}
 
 require('tables')
@@ -72,7 +73,6 @@ local screen_w = windower.get_windower_settings().ui_x_res
 local screen_h = windower.get_windower_settings().ui_y_res
 local interaction_delay = 0
 local player_total = 0
-local galli_message_id = 39998
 local last_update_time = 0
 local update_interval = 5
 local initial_delay = 60
@@ -114,7 +114,7 @@ flags.in_silverknife = false
 flags.upgraded_weapon = false
 
 -- Display settings
-local settings = config.load('data/settings_' .. player_name .. '.xml', {
+local defaultoids = {
     pos = {
         x = screen_w / 5,
         y = screen_h / 10000
@@ -142,7 +142,13 @@ local settings = config.load('data/settings_' .. player_name .. '.xml', {
         }
     },
 	padding = 1,
+    galli_message_id = 40006,
     gallimaufry_record = 0,
+    carryOverGalli = 0,
+    magic_feed = 59.0,
+    physical_feed = 74.82,
+    tank_feed = 60,
+    absorb_samples = 0,
 	plates = {
 	shiny = {
     start_time = 0,
@@ -154,8 +160,15 @@ local settings = config.load('data/settings_' .. player_name .. '.xml', {
 },
 	toggle_sound = true,
 	Auto = true,
-    Range = 10,
-})
+    Range = 10,   
+}
+local settings = config.load('data/settings_' .. player_name .. '.xml',defaultoids)
+if settings.galli_message_id <= 40005 then
+    settings.galli_message_id = 40006
+    config.save(settings)
+end
+local last_absorb_time = nil
+local galli_message_id = settings.galli_message_id or 40004
 local gallimaufry_record = settings.gallimaufry_record
 -- UI elements
 local display = texts.new('', settings, settings)
@@ -212,13 +225,17 @@ local sound_paths = {
     a_minor = addon_path .. 'data/waves/a_minor.wav',
 	loading = addon_path .. 'data/waves/load.wav',
 	notify = addon_path .. 'data/waves/notify.wav',
-	warning = addon_path .. 'data/waves/warning.wav'
+	warning = addon_path .. 'data/waves/warning.wav',
+    bruh = addon_path .. 'data/waves/bruh.wav',
+    fahh = addon_path .. 'data/waves/fahh.wav',
+    extrafeed = addon_path .. 'data/waves/extrafeed.wav',
+    absorbfail = addon_path .. 'data/waves/absorbfail.wav',
 }
    --   NM and bitzer machinery
 ------------------------------------------------------------------------
 local map_location = {
     [0] = {
-        ['(A-1)'] = 'Vamp. rm',
+        ['(A-1)'] = 'Vamp.Rm/Ele.Rm.',
     },
     [1] = {
         ['(F-6)'] = 'Gadget #A',
@@ -585,28 +602,12 @@ windower.register_event('incoming chunk', function(id, data)
         -- Parse the packet to log relevant information
         local packet = packets.parse('incoming', data)
         if id == 0x02A and not injected then
-            --windower.add_to_chat(207,
-                --string.format('Packet 0x02A - Message ID: %d, Param 1: %d, Param 2: %d', packet['Message ID'],
-                    --packet['Param 1'], packet['Param 2']))
             if initial_checkthrough == true and not galli_message_id then
-                --print("Initial checkthrough data induction")
                 induct_data()
             end
             -- Only process if Param 1 and Param 2 exist
             if packet['Param 2'] and packet['Param 1'] then
                 if galli_message_id and packet['Message ID'] == galli_message_id and previous_gallimaufry ~= packet['Param 2'] then
-                    -- Handle potential loss of packets
-                    --print(galli_message_id)
-                    --if packet['Param 2'] - packet['Param 1'] ~= player_total and player_total ~= 0 then
-                        --earned_gallimaufry = earned_gallimaufry + (packet['Param 2'] - player_total)
-						--print("Debugging message, Packetloss detected; attempting to correct")
-                        --windower.add_to_chat(207, 'Gallimaufry updated with adjustment: ' .. earned_gallimaufry)
-                    --else
-                        --earned_gallimaufry = earned_gallimaufry + packet['Param 1']
-                        --windower.add_to_chat(207, 'Gallimaufry updated: ' .. earned_gallimaufry)
-                    --end
-                    -- Update player total
-                    --player_total = packet['Param 2']
 						if zone_in_amount then
 							previous_gallimaufry = packet['Param 2']
 							earned_gallimaufry = packet['Param 2'] - zone_in_amount
@@ -615,15 +616,19 @@ windower.register_event('incoming chunk', function(id, data)
 							previous_gallimaufry = packet['Param 2']
 							earned_gallimaufry = packet['Param 2'] - zone_in_amount
 						end
+                        if packet['Param 1'] == 30000 then
+                            aminon_display:hide()
+                            last_absorb_time = nil
+                        end
 				elseif galli_message_id and packet['Message ID'] ~= galli_message_id and packet['Param 2'] == previous_gallimaufry + packet['Param 1'] then
 					-- This should indicate SE has added something to the currency 2 menu and we'll need to grab the new Message ID dynamically until this addon receives an update.
-					--print("Packet Message ID updated Dynamically")
 					galli_message_id = packet['Message ID']
+                    settings.galli_message_id = galli_message_id
+                    config.save(settings)
                 elseif not galli_message_id then
 
                     if packet['Param 2'] == previous_gallimaufry + packet['Param 1'] then
                         galli_message_id = packet['Message ID'] -- Store the dynamic message ID
-                        --windower.add_to_chat(207, 'Galli message ID dynamically updated to: ' .. galli_message_id)
                     else
                         initial_checkthrough = true
                     end
@@ -914,7 +919,6 @@ local function save_ruspix_data()
 		    settings.plates.ruspix.accumulated_time = plates.ruspix.accumulated_time
 			settings.plates.ruspix.start_time = os.time()
 		    settings:save()
-			--settings:save()
 		end
 end
 
@@ -988,7 +992,7 @@ local function get_gallionaire_logo()
 			highlight_color = {red = 0, green = 0, blue = 255}
 	end
     local logo_str = string.format(
-        '\\cs(%d,%d,%d)Galli\\cr\\cs(%d,%d,%d)onaire\\cr',
+        '\\cs(%d,%d,%d)Galli\\cr\\cs(%d,%d,%d)onaire™\\cr',
         highlight_color.red, highlight_color.green, highlight_color.blue,
         primary_color.red, primary_color.green, primary_color.blue
     )
@@ -1068,23 +1072,12 @@ local function update_ruspix_display()
 			plates.ruspix.manually_entered = 0
         end
     end
---[[
-	if os.time() >= plates.ruspix.start_time then
-	   print(true)                                 -------------------------------------Ruspix timer debugging
-	else
-	   print(false)                            -------------------------------------Ruspix timer debugging
-	end
-]]
 
     if updatinator_elapsed_time > 60 then
-	   -- print("Updatinator ... engaged!")                        -------------------------------------Ruspix timer debugging
-		--print(plates.ruspix.accumulated_time, settings.plates.ruspix.accumulated_time)
     	if  plates.ruspix.accumulated_time ~= settings.plates.ruspix.accumulated_time then
 		    settings.plates.ruspix.accumulated_time = plates.ruspix.accumulated_time
 			settings.plates.ruspix.start_time = os.time()
 		    settings:save()
-			--settings:save()
-			--print(plates.ruspix.accumulated_time, settings.plates.ruspix.accumulated_time)
 		end
 		ruspix_updatinator = updatinator_current_time
     end
@@ -1093,7 +1086,6 @@ local function update_ruspix_display()
     local hours = math.floor(plates.ruspix.accumulated_time / 3600)
     local minutes = math.floor((plates.ruspix.accumulated_time % 3600) / 60)
 	local seconds = math.floor((plates.ruspix.accumulated_time % 3600) % 60)
-	--print(seconds)                                                       -------------------------------------Ruspix timer debugging
     -- Determine if Ruspix time is sufficient to recharge the Shinyplate
     local shinyplate_remaining = plates.shiny.cooldown_seconds - (os.time() - plates.shiny.start_time)
     local can_recharge = plates.ruspix.accumulated_time >= shinyplate_remaining --[[and shinyplate_remaining > 0]] and not flags.in_sortie_zone
@@ -1148,7 +1140,7 @@ function update_display()
 	-------------------Cutting cards / SV/CC notifier------------------------------
 	    if flags.in_sortie_zone and not flags.zoning then
 			if last_zone_time then
-			local time_since_entry = (os.time() - last_zone_time) / 60
+			    local time_since_entry = (os.time() - last_zone_time) / 60
 				if time_since_entry > 30 and not oh_notifier.six then
 					oh_notifier.six = true
 					one_hour_checker()
@@ -1169,7 +1161,13 @@ function update_display()
 					one_hour_checker()
 				end
 			else
-				last_zone_time = os.time()
+				last_zone_time = settings.last_zone_time or os.time()
+                local stale_check = (os.time() - last_zone_time) / 60
+                if stale_check > 62 then -- It was a different run, setting didn't get updated.
+                    last_zone_time = os.time()
+                end
+                settings.last_zone_time = last_zone_time
+                config.save(settings)
 			end
 		end
 	-------------------------------------------------------------------------------
@@ -1297,63 +1295,454 @@ function update_sortie_display()
 	--end
 end
 
+local function is_aminon_active()
+    local mobs = windower.ffxi.get_mob_array()
+
+    for _, mob in pairs(mobs) do
+        if mob.name == 'Aminon' then
+            return mob.hpp > 0
+        end
+    end
+
+    return false
+end
+
+local aminon_tp = 0
+local aminon_tp_checkpoint = 0
+local aminon_tp_warning_played = false
+
+local magic_feed    = settings.magic_feed or 59.0
+local physical_feed = settings.physical_feed or 60.0
+local tank_feed     = settings.tank_feed or 250.0
+
+local absorb_samples = settings.absorb_samples or 0
+
+local spells_since_absorb = 0
+local ws_since_absorb = 0
+local hits_since_absorb = 0
+
+local last_absorb_time = nil
+
+local regain_per_tick = 50
+
+local function floor2(value)
+    return math.floor(value * 100) / 100
+end
+
+----------------------------------------------------------------------
+-- Current TP Estimate
+----------------------------------------------------------------------
+local function get_current_aminon_tp()
+
+    if not last_absorb_time then
+        return math.max(0, aminon_tp_checkpoint)
+    end
+
+    local elapsed = os.time() - last_absorb_time
+
+    -- Continuous Regain Model
+    local regain_tp = elapsed * (regain_per_tick / 3)
+
+    return math.max(0, aminon_tp_checkpoint + regain_tp)
+end
+
+----------------------------------------------------------------------
+-- Learning
+----------------------------------------------------------------------
+local function learn_tp_feed(actual_tp)
+
+    local estimated_tp = get_current_aminon_tp()
+
+    local error = actual_tp - estimated_tp
+
+    absorb_samples = absorb_samples + 1
+
+    -- Slightly slower convergence
+    local learning_rate = math.max(
+        0.02,
+        0.15 / math.sqrt(absorb_samples)
+    )
+
+    local spell_tp =
+        spells_since_absorb * magic_feed
+
+    local ws_tp =
+        ws_since_absorb * physical_feed
+
+    local hit_tp =
+        hits_since_absorb * tank_feed
+
+    local total_tp =
+        spell_tp + ws_tp + hit_tp
+
+    if total_tp > 0 then
+
+        local spell_weight = spell_tp / total_tp
+        local ws_weight    = ws_tp / total_tp
+        local hit_weight   = hit_tp / total_tp
+
+        local spell_error = error * spell_weight
+        local ws_error    = error * ws_weight
+        local hit_error   = error * hit_weight
+
+        if spells_since_absorb > 0 then
+            magic_feed = floor2(
+                magic_feed +
+                ((spell_error / spells_since_absorb) * learning_rate)
+            )
+        end
+
+        if ws_since_absorb > 0 then
+            physical_feed = floor2(
+                physical_feed +
+                ((ws_error / ws_since_absorb) * learning_rate)
+            )
+        end
+
+        if hits_since_absorb > 0 then
+            tank_feed = floor2(
+                tank_feed +
+                ((hit_error / hits_since_absorb) * learning_rate)
+            )
+        end
+
+        ------------------------------------------------------------------
+        -- Sanity Clamps
+        ------------------------------------------------------------------
+        magic_feed    = math.max(50, math.min(100, magic_feed))
+        physical_feed = math.max(50, math.min(100, physical_feed))
+        tank_feed     = math.max(60, math.min(120, tank_feed))
+    end
+
+    settings.magic_feed = magic_feed
+    settings.physical_feed = physical_feed
+    settings.tank_feed = tank_feed
+    settings.absorb_samples = absorb_samples
+
+    config.save(settings)
+
+    spells_since_absorb = 0
+    ws_since_absorb = 0
+    hits_since_absorb = 0
+end
+
+----------------------------------------------------------------------
+-- TP Feed Helpers
+----------------------------------------------------------------------
+local function add_spell_tp()
+    aminon_tp_checkpoint =
+        aminon_tp_checkpoint + magic_feed
+
+    spells_since_absorb =
+        spells_since_absorb + 1
+end
+
+local function add_ws_tp(supplement)
+    if supplement == nil then supplement = 0 end
+    aminon_tp_checkpoint =
+        aminon_tp_checkpoint + physical_feed + supplement
+
+    ws_since_absorb =
+        ws_since_absorb + 1
+end
+
+local function add_tank_tp()
+    aminon_tp_checkpoint =
+        aminon_tp_checkpoint + tank_feed
+
+    hits_since_absorb =
+        hits_since_absorb + 1
+end
+
+----------------------------------------------------------------------
+-- Display
+----------------------------------------------------------------------
 local function update_aminon_display()
-    local lines = {}
+
+    local current_tp =
+        math.floor(get_current_aminon_tp())
+
+    local player_lines = {}
+
     for name, data in pairs(absorb_counts) do
-        local last_num = string.format("%4d", data.last) -- fixed width first
+
+        local last_num =
+            string.format("%4d", data.last)
+
         local last_str
+
         if data.last > 300 then
-            last_str = string.format("\\cs(255,0,0)%s\\cr",last_num)
+            last_str = string.format(
+                "\\cs(255,0,0)%s\\cr",
+                last_num
+            )
         else
             last_str = last_num
         end
 
-        -- Pad name to fixed width before printing
-        local line = string.format("%-12s | Count:%3d | Last:%s | Total:%5d",
-            name, data.count, last_str, data.total
+        table.insert(
+            player_lines,
+            string.format(
+                "%-12s | Count:%3d | Last:%s | Total:%5d",
+                name,
+                data.count,
+                last_str,
+                data.total
+            )
         )
+    end
+
+    table.sort(player_lines)
+
+    local lines = {}
+
+    local tp_line
+
+    if current_tp >= 850 then
+
+        tp_line = string.format(
+            "\\cs(255,0,0)Aminon\'s estimated TP: %d\\cr",
+            current_tp
+        )
+
+        if not aminon_tp_warning_played then
+            aminon_tp_warning_played = true
+            if settings.toggle_sound then
+                windower.play_sound(sound_paths.warning)
+            end
+        end
+
+    elseif current_tp >= 700 then
+
+        tp_line = string.format(
+            "\\cs(255,255,0)Aminon\'s estimated TP: %d\\cr",
+            current_tp
+        )
+
+        aminon_tp_warning_played = false
+
+    else
+
+        tp_line = string.format(
+            "Aminon\'s estimated TP: %d",
+            current_tp
+        )
+
+        aminon_tp_warning_played = false
+    end
+
+    table.insert(lines, tp_line)
+    table.insert(lines, "---------------------------------------------------")
+
+    for _, line in ipairs(player_lines) do
         table.insert(lines, line)
     end
 
-    table.sort(lines)
-    if #lines > 0 then
-        aminon_display:text(table.concat(lines, '\n'))
-    else
-        aminon_display:text('')
-    end
+    aminon_display:text(
+        table.concat(lines, '\n')
+    )
 end
-
+local monk_player = nil
+--aminon_display:show()
 windower.register_event('action', function(act)
-    if not flags.in_sortie_zone then return end -- stop this from firing unless we're in sortie
-    if act.category == 4 or act.category == 3 then 
+    --print(act.category)
+    if not flags.in_sortie_zone then return end
+
+    -------------------------------------------------------------------------
+    -- Aminon TP Feed Tracking
+    -------------------------------------------------------------------------
+
+        local doer = windower.ffxi.get_mob_by_id(act.actor_id)
+
+        if doer and doer.name == "Aminon" then
+
+            local target = act.targets[1]
+
+            if target then
+
+                local maintarget = windower.ffxi.get_mob_by_id(target.id)
+
+                if maintarget then
+
+                    if act.category == 7 then  -- If he TPs, reset TP to 0.
+                            windower.play_sound(sound_paths.fahh)
+                        windower.add_to_chat(167,'Gallionaire: TP move detected.')
+                        last_absorb_time = os.time()
+                        aminon_tp_checkpoint = 0
+                        update_aminon_display()
+                        return
+                    end
+
+                    for _, action in ipairs(target.actions) do
+
+                        if (action.param or 0) > 0 then
+                            if settings.toggle_sound then
+                                windower.play_sound(sound_paths.extrafeed)
+                            end
+                            add_tank_tp()
+                    
+                            local tip
+                            if aminon_tp_checkpoint > 500 then
+                                tip = 'Gallionaire: %s took damage, estimated TP: %d. Hold offense until an absorb has landed!'
+                            else
+                                tip = 'Gallionaire: %s took damage, Aminon\'s estimated TP: %d.'
+                            end
+                            windower.add_to_chat(167,(tip):format(maintarget.name, aminon_tp_checkpoint))
+                            update_aminon_display()
+                            return
+                        end
+                    end
+                end
+            end
+        end
+    -------------------------------------------------------------------------
+    -- Monk Exception setter.
+    -------------------------------------------------------------------------  
+    if not monk_player and act.category == 6 then --Jump right over this once monk var is set.
+        for _, target in ipairs(act.targets) do
+            for _, action in ipairs(target.actions) do
+                if action.message == 110 and act.param == 82 then
+                    monk_player = doer.name  -- Set monk_player variable.
+                    return 
+                end
+            end
+        end
+    end
+        --
+    -------------------------------------------------------------------------
+    -- Absorb TP Tracking
+    -------------------------------------------------------------------------
+    local action = act.targets[1].actions[1]
+    local message = action.message
+    if act.category == 4 or act.category == 3 or act.category == 1 then
+
         local spell_id = act.param
         local doer = windower.ffxi.get_mob_by_id(act.actor_id)
-		local shitheels = act.targets
-		local maintarget = windower.ffxi.get_mob_by_id(shitheels[1].id)
-		if doer and maintarget and maintarget.name == "Aminon" then
-			if doer.name and spell_id == 275 then
-				local absorbed = 0
-				for _, target in ipairs(act.targets) do
-					for _, action in ipairs(target.actions) do
-						absorbed = absorbed + (action.param or 0)
-					end
-				end
 
-				if not absorb_counts[doer.name] then
-					absorb_counts[doer.name] = {count = 0, last = 0, total = 0}
-				end
+        local shitheels = act.targets
+        if not shitheels[1] then
+            return
+        end
 
-				local entry = absorb_counts[doer.name]
-				entry.count = entry.count + 1
-				entry.last  = absorbed
-				entry.total = entry.total + absorbed
-				if absorbed > 380 then
-					windower.play_sound(sound_paths.warning)
-				end
-				aminon_display:show()
-				update_aminon_display()
-			end
-		end
+        local maintarget = windower.ffxi.get_mob_by_id(shitheels[1].id)
+
+        if doer and maintarget and maintarget.name == "Aminon" then
+
+            if doer.name and spell_id == 275 then
+
+                local absorbed = 0
+
+                for _, target in ipairs(act.targets) do
+                    for _, action in ipairs(target.actions) do
+                        absorbed = absorbed + (action.param or 0)
+                    end
+                end
+                if absorbed > 0 then
+                    --local actual_tp_before = absorbed / 0.4
+                    local actual_tp_before, tp_if_full, tp_if_half, full_error, half_error, estimated_tp
+                    estimated_tp = get_current_aminon_tp()
+                    tp_if_full = absorbed / 0.4
+                    tp_if_half = absorbed / 0.2
+                    full_error = math.abs(tp_if_full - estimated_tp)
+                    half_error = math.abs(tp_if_half - estimated_tp)
+                    if full_error < half_error then
+                        --windower.add_to_chat(207,('Gallionaire: %s absorbed 40%% of Aminon\'s TP.'):format(doer.name))
+                        actual_tp_before = tp_if_full
+                    else
+                        --windower.add_to_chat(207,('Gallionaire: Resisted. %s absorbed 20%% of Aminon\'s TP.'):format(doer.name))
+                        actual_tp_before = tp_if_half
+                    end
+                    learn_tp_feed(actual_tp_before)
+                    aminon_tp_checkpoint = absorbed * 1.5
+                    last_absorb_time = os.time()
+                else
+                    if settings.toggle_sound then
+                        windower.play_sound(sound_paths.absorbfail)
+                    end
+                    windower.add_to_chat(
+                        167,
+                        'Gallionaire: Absorbed for 0 TP be advised!'
+                    )
+                    last_absorb_time = os.time()
+                end
+
+                
+
+                if not absorb_counts[doer.name] then
+                    absorb_counts[doer.name] = {
+                        count = 0,
+                        last = 0,
+                        total = 0
+                    }
+                end
+
+                local entry = absorb_counts[doer.name]
+
+                entry.count = entry.count + 1
+                entry.last  = absorbed
+                entry.total = entry.total + absorbed
+
+                if absorbed >= 360 then
+                    if settings.toggle_sound then
+                        windower.play_sound(sound_paths.warning)
+                    end
+                    windower.add_to_chat(167,'Gallionaire: Aminon\'s TP exceeded 900.')
+                end
+                aminon_display:show()
+                update_aminon_display()
+            end
+            ------------------------------------------------------------------
+            -- TP Feed
+            ------------------------------------------------------------------
+            local ws_id = act.param
+            local supplement = 0
+            if action.message == 252 or action.message == 2 then
+                if aminon_tp_checkpoint > 850 then
+                    aminon_tp_warning_played = false
+                end
+                add_spell_tp()
+                aminon_display:show()
+                update_aminon_display()
+            elseif action.message == 185 then
+                if aminon_tp_checkpoint > 850 then
+                    aminon_tp_warning_played = false
+                end
+                if ws_id and ws_id == 232 then
+                    supplement = 25
+                elseif ws_id and ws_id == 31 then
+                    supplement = -15
+                elseif doer.name == monk_player then
+                    supplement = -55
+                end
+                add_ws_tp(supplement)
+                aminon_display:show()
+                update_aminon_display()
+            elseif act.category == 1 then
+                if doer.name == monk_player then
+                    supplement = -55
+                else
+                    windower.add_to_chat(
+                        167,
+                        ('Gallionaire: %s is engaged and feeding TP! Aminon\'s estimated TP: %d')
+                            :format(doer.name, aminon_tp_checkpoint)
+                    )
+                    if settings.toggle_sound then
+                        windower.play_sound(sound_paths.bruh)
+                    end
+                end
+                add_ws_tp(supplement)
+                aminon_display:show()
+                update_aminon_display()
+            end
+        elseif aminon_display:visible() then 
+            if not is_aminon_active() then  -- Make sure we are still fighting Aminon to kill the TP readout incase things go awry and it isn't killed the normal way.
+                aminon_tp = 0
+                aminon_tp_checkpoint = 0
+                last_absorb_time = nil
+                absorb_samples = 0
+                aminon_display:hide()
+            end
+        end
     end
 end)
 
@@ -1380,6 +1769,8 @@ windower.register_event('login', function()
 	    induct_data()
 		coroutine.sleep(3)
         print('Character switched from '..current_character..' to '..player.name)
+        --settings = config.load(('data/settings_%s.xml'):format(player.name),defaultoids)
+        windower.send_command('ga r')
         current_character = player.name
     end
 end)
@@ -1492,37 +1883,55 @@ local function check_zone()
         flags.in_silverknife = false
         coroutine.schedule(function()
             induct_data()
+			if settings.carryOverGalli > 0 then
+				zone_in_amount = settings.carryOverGalli 
+			else
+				zone_in_amount = previous_gallimaufry
+			end
+			settings.carryOverGalli = zone_in_amount
+			earned_gallimaufry = previous_gallimaufry - zone_in_amount
+			config.save(settings)
 			absorb_counts = {}
-			zone_in_amount = previous_gallimaufry
             update_display()
         end, 2)
 	elseif zone_id == 267 or zone_id == 281 or zone_id == 283 then
         flags.polling_zone = true
-            if zone_id == 283 then
-                flags.in_silverknife = true
-            else
-                flags.in_silverknife = false
-            end
-            if zone_id == 281 then
-                flags.in_leafalia = true
-            else
-                flags.in_leafalia = false
-            end
+        if zone_id == 283 then
+            flags.in_silverknife = true
+        else
+            flags.in_silverknife = false
+        end
+        if zone_id == 281 then
+            flags.in_leafalia = true
+        else
+            flags.in_leafalia = false
+        end
+        settings.carryOverGalli = 0
+        settings.last_zone_time = nil
+        config.save(settings)
     else
         flags.in_silverknife = false
         flags.in_leafalia = false
         flags.in_sortie_zone = false
 		flags.entered_sortie_now = false
+        settings.carryOverGalli = 0
+        settings.last_zone_time = nil
+        config.save(settings)
     end
 end
 
 windower.register_event('unload', function() 
+	if flags.in_sortie_zone and earned_gallimaufry > 0 then
+		settings.carryOverGalli = zone_in_amount
+        settings.last_zone_time = last_zone_time
+        config.save(settings)
+	end
 	save_record()
 	save_ruspix_data()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.5! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.2! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)
@@ -1541,7 +1950,6 @@ end)
 
 windower.register_event('zone change', function(new_id, old_id)
     flags.zoning = true
-	last_zone_time = os.time()
 	oh_notifier = {}
     coroutine.schedule(function()
         flags.zoning = false
@@ -1558,6 +1966,10 @@ windower.register_event('zone change', function(new_id, old_id)
 			absorb_counts = {}
 			induct_data()
 			zone_in_amount = previous_gallimaufry
+			settings.carryOverGalli = zone_in_amount
+            last_zone_time = os.time()
+            settings.last_zone_time = last_zone_time
+			config.save(settings)
 			update_display()
 		elseif new_id == 267 or new_id == 281 or new_id == 283 then
 			flags.polling_zone = true
@@ -1580,6 +1992,10 @@ windower.register_event('zone change', function(new_id, old_id)
 			flags.in_sortie_zone = false
 			flags.entered_sortie_now = false
 			zone_in_amount = nil
+			settings.carryOverGalli = 0
+            settings.last_zone_time = nil
+            last_zone_time = nil
+			config.save(settings)
 			log('Total haul: ' .. earned_gallimaufry)
 			save_record()
 		end
@@ -1606,6 +2022,9 @@ windower.register_event('prerender', function()
 	if flags.in_sortie_zone then
 		frame_count = frame_count + 1
 		if frame_count == 30 then
+            if aminon_display:visible() then
+                update_aminon_display()
+            end
 			update_doors()
 			frame_count = 0
 		end
@@ -1648,10 +2067,10 @@ end)
 windower.register_event('time change', function()
     if flags.polling_zone then
 		update_display()
-   else
+    else
 		local the_real = os.time() 
 		if the_real % 3 == 0 then
 			update_display()
 		end
-   end
+    end
 end)
