@@ -1,4 +1,4 @@
-👑 ⚔️ Gallionaire v2.5 ⚔ 👑
+👑 ⚔️ Gallionaire v2.6.3 ⚔ 👑
 
 [Download Gallionaire](https://github.com/staticvoid0/Gallionaire/releases/download/2.5/Gallionaire.zip)
 
@@ -13,6 +13,8 @@ Auto-opens closed doors; Now no longer interacts with doors that are already ope
 Displays Gallionaire Logo in Green when all 6 players are within 15 yalms, giving the user a boss-pull indicator.
 
 Introducing the Absorb-TP readout. Gallionaire now tracks and displays all absorb-TP spells cast specifically on Aminon.
+
+Added Aminon TP tracking to the TP readout as well as notifications when something is not as it should be including someone engaged (excluding Monk mainjob) Absorbs failing to land which indicates Frazzle III or Dark Threnody II not being on, the tank taking damage and more.
 
 Tracks and displays Rusplix Plate and Shiny Plate timers.
 
