@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 _addon.name = 'Gallionaire'
 _addon.author = 'Staticvoid'
-_addon.version = '2.6.3'
+_addon.version = '2.6.4'
 _addon.commands = {'Gallionaire', 'ga'}
 
 require('tables')
@@ -672,33 +672,20 @@ windower.register_event('incoming chunk', function(id, original)
     end
 end)
 function display_message(earned_gallimaufry)
-
-        if earned_gallimaufry >= 78000 and last_threshold < 78000 then
-            windower.add_to_chat(207, "Aminon: Outstanding!")
-			last_threshold = 78000
-			aminon_display:hide()
-		    if toggle_sound then
-                windower.play_sound(sound_paths.outstanding)
-			end
-        elseif earned_gallimaufry >= 48000 and last_threshold < 48000 then
-            windower.add_to_chat(207, "Aminon: Impressive!")
-            last_threshold = 48000
-			if toggle_sound then
-                windower.play_sound(sound_paths.a_minor)
-			end
-        elseif earned_gallimaufry >= 40000 and last_threshold < 40000 then
-		    windower.add_to_chat(200, "40,000 gallimaufry.")
-            last_threshold = 40000
-        elseif earned_gallimaufry >= 30000 and last_threshold < 30000 then
-		    windower.add_to_chat(200, "30,000 gallimaufry.")
-            last_threshold = 30000
-        elseif earned_gallimaufry >= 20000 and last_threshold < 20000 then
-            windower.add_to_chat(200, "20,000 gallimaufry.")
-            last_threshold = 20000
-        elseif earned_gallimaufry >= 10000 and last_threshold < 10000 then
-            windower.add_to_chat(200, "10,000 gallimaufry")
-            last_threshold = 10000
+    if earned_gallimaufry >= 78000 and last_threshold < 78000 then
+        windower.add_to_chat(207, "Aminon: Outstanding!")
+        last_threshold = 78000
+        aminon_display:hide()
+        if toggle_sound then
+            windower.play_sound(sound_paths.outstanding)
         end
+    elseif earned_gallimaufry >= 50000 and last_threshold < 50000 then
+        windower.add_to_chat(207, "Aminon: Impressive!")
+        last_threshold = 50000
+        if toggle_sound then
+            windower.play_sound(sound_paths.a_minor)
+        end
+    end
 end
 
 update_doors = function()
@@ -1564,12 +1551,25 @@ windower.register_event('action', function(act)
 
                 if maintarget then
 
-                    if act.category == 7 then  -- If he TPs, reset TP to 0.
+                    if act.category == 7 then
+
+                        local paralyzed = false
+
+                        for _, action in ipairs(target.actions or {}) do
+                            if action.animation == 508 and action.message == 0 and action.param == 0 then -- this is just a paralysis proc.
+                                paralyzed = true
+                                break
+                            end
+                        end
+
+                        if not paralyzed then
                             windower.play_sound(sound_paths.fahh)
-                        windower.add_to_chat(167,'Gallionaire: TP move detected.')
-                        last_absorb_time = os.time()
-                        aminon_tp_checkpoint = 0
-                        update_aminon_display()
+                            windower.add_to_chat(167, 'Gallionaire: TP move detected.')
+                            last_absorb_time = os.time()
+                            aminon_tp_checkpoint = 0
+                            update_aminon_display()
+                        end
+
                         return
                     end
 
@@ -1661,7 +1661,7 @@ windower.register_event('action', function(act)
                     end
                     windower.add_to_chat(
                         167,
-                        'Gallionaire: Absorbed for 0 TP be advised!'
+                        'Gallionaire: Absorbed for 0 TP be advised; Ensure Dark Threnody II and Frazzle III are on.'
                     )
                     last_absorb_time = os.time()
                 end
@@ -1931,7 +1931,7 @@ windower.register_event('unload', function()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.3! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.4! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)
