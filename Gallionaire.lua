@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 _addon.name = 'Gallionaire'
 _addon.author = 'Staticvoid'
-_addon.version = '2.6.4'
+_addon.version = '2.6.5'
 _addon.commands = {'Gallionaire', 'ga'}
 
 require('tables')
@@ -1194,6 +1194,16 @@ function update_display()
 	    end
 	end
 			plates.ruspix.grabbed_ruspix_plate = grabbed_ruspix_plate_now
+            ---------------Handle Shinyplate reset campaign------------------------
+            if plates.ruspix.grabbed_ruspix_plate and flags.in_sortie_zone then
+                plates.shiny.start_time = plates.shiny.start_time - remaining_time
+                plates.shiny.timer = plates.shiny.start_time
+                settings.plates.shiny.start_time = plates.shiny.start_time
+                settings.plates.ruspix.start_time = os.time() 
+                settings:save()
+                plates.ruspix.start_time = settings.plates.ruspix.start_time
+            end
+            ------------------------------------------------------------------------
 	---------------------------------------------------------------
 	--8888888888888888888888888888888888888888888888888888888888888888888888888888888888
 	if earned_gallimaufry ~= 0 and earned_gallimaufry < newly_earned_gallimaufry then--8              
@@ -1931,7 +1941,7 @@ windower.register_event('unload', function()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.4! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.5! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)
