@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 _addon.name = 'Gallionaire'
 _addon.author = 'Staticvoid'
-_addon.version = '2.6.5'
+_addon.version = '2.6.6'
 _addon.commands = {'Gallionaire', 'ga'}
 
 require('tables')
@@ -1171,6 +1171,17 @@ function update_display()
         flags.entered_sortie = flags.entered_sortie_now
 		
 	     local grabbed_ruspix_plate_now = has_ruspix_plate()
+        ---------------Handle Shinyplate reset campaign------------------------
+        if grabbed_ruspix_plate_now and not plates.ruspix.grabbed_ruspix_plate and flags.in_sortie_zone then
+            log('Shinyplate reset.')
+            plates.shiny.start_time = plates.shiny.start_time - remaining_time
+            plates.shiny.timer = plates.shiny.start_time
+            settings.plates.shiny.start_time = plates.shiny.start_time
+            settings.plates.ruspix.start_time = os.time() 
+            settings:save()
+            plates.ruspix.start_time = settings.plates.ruspix.start_time
+        end
+            ------------------------------------------------------------------------
 	if flags.in_leafalia then
         if not plates.ruspix.grabbed_ruspix_plate and grabbed_ruspix_plate_now then
             -- You are in Leafallia and you didn't have shinyplate, and now you do - update Ruspix plate accumulated time.
@@ -1194,16 +1205,7 @@ function update_display()
 	    end
 	end
 			plates.ruspix.grabbed_ruspix_plate = grabbed_ruspix_plate_now
-            ---------------Handle Shinyplate reset campaign------------------------
-            if plates.ruspix.grabbed_ruspix_plate and flags.in_sortie_zone then
-                plates.shiny.start_time = plates.shiny.start_time - remaining_time
-                plates.shiny.timer = plates.shiny.start_time
-                settings.plates.shiny.start_time = plates.shiny.start_time
-                settings.plates.ruspix.start_time = os.time() 
-                settings:save()
-                plates.ruspix.start_time = settings.plates.ruspix.start_time
-            end
-            ------------------------------------------------------------------------
+
 	---------------------------------------------------------------
 	--8888888888888888888888888888888888888888888888888888888888888888888888888888888888
 	if earned_gallimaufry ~= 0 and earned_gallimaufry < newly_earned_gallimaufry then--8              
@@ -1941,7 +1943,7 @@ windower.register_event('unload', function()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.5! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.6! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)
