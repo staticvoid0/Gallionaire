@@ -40,7 +40,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 _addon.name = 'Gallionaire'
 _addon.author = 'Staticvoid'
-_addon.version = '2.6.6'
+_addon.version = '2.6.7'
 _addon.commands = {'Gallionaire', 'ga'}
 
 require('tables')
@@ -98,12 +98,12 @@ plates.shiny.timer = nil
 plates.shiny.start_time = 153223
 plates.shiny.duration = 20 * 60 * 60
 plates.shiny.cooldown_seconds = 20 * 60 * 60
+plates.shiny.grabbed_shiny_plate = true
 plates.ruspix = {}
 plates.ruspix.accumulation_rate = 5
 plates.ruspix.start_time = 0
 plates.ruspix.manually_entered = 0
 plates.ruspix.accumulated_time = 0
-plates.ruspix.grabbed_ruspix_plate = true
 flags.entered_sortie = true
 flags.entered_sortie_now = false
 flags.zoning = false
@@ -836,7 +836,7 @@ local shard_metal_ids = {
     }
 }
 
-function has_ruspix_plate()
+local function has_shiny_plate()
     local key_items = windower.ffxi.get_key_items()
     for _, ki in ipairs(key_items) do
         if ki == 3300 then
@@ -1167,45 +1167,48 @@ function update_display()
 			
         end
 	end
-		
         flags.entered_sortie = flags.entered_sortie_now
 		
-	     local grabbed_ruspix_plate_now = has_ruspix_plate()
+        local grabbed_shiny_plate_now = has_shiny_plate()
+        if not plates.shiny.grabbed_shiny_plate and grabbed_shiny_plate_now then
+            if flags.in_leafalia then
+                -- You are in Leafallia and you didn't have shinyplate, and now you do - update Ruspix plate accumulated time.
+                plates.ruspix.accumulated_time = plates.ruspix.accumulated_time - remaining_time
+                plates.shiny.start_time = plates.shiny.start_time - remaining_time
+                plates.shiny.timer = plates.shiny.start_time
+                plates.ruspix.start_time = os.time()
+                settings.plates.shiny.start_time = plates.shiny.start_time
+                settings.plates.ruspix.accumulated_time = plates.ruspix.accumulated_time
+                settings.plates.ruspix.start_time = plates.ruspix.start_time
+                settings:save()
+                coroutine.sleep(2)
+                windower.send_command('ga reset')
         ---------------Handle Shinyplate reset campaign------------------------
-        if grabbed_ruspix_plate_now and not plates.ruspix.grabbed_ruspix_plate and flags.in_sortie_zone then
-            log('Shinyplate reset.')
-            plates.shiny.start_time = plates.shiny.start_time - remaining_time
-            plates.shiny.timer = plates.shiny.start_time
-            settings.plates.shiny.start_time = plates.shiny.start_time
-            settings.plates.ruspix.start_time = os.time() 
-            settings:save()
-            plates.ruspix.start_time = settings.plates.ruspix.start_time
-        end
+            elseif flags.in_sortie_zone then
+                if flags.zoning then  
+                    grabbed_shiny_plate_now = false -- We just came in so don't get it twisted.
+                else
+                    log('Shinyplate reset.')
+                    plates.shiny.start_time = plates.shiny.start_time - remaining_time
+                    plates.shiny.timer = plates.shiny.start_time
+                    settings.plates.shiny.start_time = plates.shiny.start_time
+                    settings.plates.ruspix.start_time = os.time() 
+                    settings:save()
+                    plates.ruspix.start_time = settings.plates.ruspix.start_time
+                end
+            end
             ------------------------------------------------------------------------
-	if flags.in_leafalia then
-        if not plates.ruspix.grabbed_ruspix_plate and grabbed_ruspix_plate_now then
-            -- You are in Leafallia and you didn't have shinyplate, and now you do - update Ruspix plate accumulated time.
-            plates.ruspix.accumulated_time = plates.ruspix.accumulated_time - remaining_time
-	    	plates.shiny.start_time = plates.shiny.start_time - remaining_time
-		    plates.shiny.timer = plates.shiny.start_time
-			plates.ruspix.start_time = os.time()
-		    settings.plates.shiny.start_time = plates.shiny.start_time
-			settings.plates.ruspix.accumulated_time = plates.ruspix.accumulated_time
-			settings.plates.ruspix.start_time = plates.ruspix.start_time
-			settings:save()
-			coroutine.sleep(2)
-			windower.send_command('ga reset')
         end
-        upgrade_gear_checker = count_rakaznar_gems()
-        -- Upgrade Gallimaufry since we have upgraded a piece of gear
-	    if upgrade_gear_checker ~= new_upgrade_gear_checker then
-	        induct_data()
-			coroutine.schedule(update_display, 2)
-			new_upgrade_gear_checker = upgrade_gear_checker
-	    end
-	end
-			plates.ruspix.grabbed_ruspix_plate = grabbed_ruspix_plate_now
-
+        plates.shiny.grabbed_shiny_plate = grabbed_shiny_plate_now
+        if flags.in_leafalia then
+            upgrade_gear_checker = count_rakaznar_gems()
+            -- Upgrade Gallimaufry since we have upgraded a piece of gear
+            if upgrade_gear_checker ~= new_upgrade_gear_checker then
+                induct_data()
+                coroutine.schedule(update_display, 2)
+                new_upgrade_gear_checker = upgrade_gear_checker
+            end
+        end
 	---------------------------------------------------------------
 	--8888888888888888888888888888888888888888888888888888888888888888888888888888888888
 	if earned_gallimaufry ~= 0 and earned_gallimaufry < newly_earned_gallimaufry then--8              
@@ -1943,7 +1946,7 @@ windower.register_event('unload', function()
 end)
 
 windower.register_event('load', function()
-    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.6! \n//ga help for a list of commands.')
+    windower.add_to_chat(207,'Welcome to Gallionaire 2.6.7! \n//ga help for a list of commands.')
     display:show()
 	update_display()
 	windower.play_sound(sound_paths.loading)

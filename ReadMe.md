@@ -1,4 +1,4 @@
-👑 ⚔️ Gallionaire v2.6.6 ⚔ 👑
+👑 ⚔️ Gallionaire v2.6.7 ⚔ 👑
 
 [Download Gallionaire](https://github.com/staticvoid0/Gallionaire/releases/download/2.6.6/Gallionaire.zip)
 
